@@ -3,3 +3,4 @@ models
 model
 *.swp
 *.p
+.DS_Store
