@@ -322,9 +322,9 @@ for idx, fname in enumerate(images_list):
 
 
 # process video
-# input_video = 'project_video.mp4'
-# output_video = 'output_video.mp4'
+input_video = 'project_video.mp4'
+output_video = 'output_video.mp4'
 
-# clip = VideoFileClip(input_video)
-# video_clip = clip.fl_image(process_image)
-# video_clip.write_videofile(output_video, audio=False)
+clip = VideoFileClip(input_video)
+video_clip = clip.fl_image(process_image)
+video_clip.write_videofile(output_video, audio=False)
