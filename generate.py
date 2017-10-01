@@ -4,7 +4,6 @@ import glob
 import pickle
 import collections
 from moviepy.editor import VideoFileClip
-from tracker import Tracker
 
 # Read in the saved obj_points and img_points
 dist_pickle = pickle.load(open('camera_cal/calibration_pickle.p', 'rb'))
@@ -41,32 +40,6 @@ def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0, 255)):
     
     return binary_output
 
-# def mag_thresh(img, sobel_kernel=3, mag_thresh=(0, 255)):
-#     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    
-#     sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
-#     sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-    
-#     grad_mag = np.sqrt(sobel_x**2 + sobel_y**2)
-#     scale_factor = np.max(grad_mag)/255 
-#     grad_mag = (grad_mag / scale_factor).astype(np.uint8) 
-    
-#     binary_output = np.zeros_like(grad_mag)
-#     binary_output[(grad_mag >= mag_thresh[0]) & (grad_mag <= mag_thresh[1])] = 1
-#     return binary_output
-
-# def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
-#     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    
-#     sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
-#     sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-
-#     with np.errstate(divide='ignore', invalid='ignore'):
-#     	abs_grad_dir = np.absolute(np.arctan(sobel_y / sobel_x))
-#     	binary_output =  np.zeros_like(abs_grad_dir)
-#     	binary_output[(abs_grad_dir >= thresh[0]) & (abs_grad_dir <= thresh[1])] = 1
-    
-#     return binary_output
 
 def color_thresh(image, s_thresh=(0, 255), v_thresh=(0, 255)):
 	hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
@@ -150,7 +123,6 @@ def process_image(img, save_ouput_file=False, is_first_frame=True):
 
 
 
-
 	# apply region of interest
 	masked = region_of_interest(preprocessed)
 
@@ -185,7 +157,7 @@ def process_image(img, save_ouput_file=False, is_first_frame=True):
 		# Take a histogram of the bottom half of the image
 		histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
 		# Create an output image to draw on and  visualize the result
-		out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
+		windowed_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
 		# Find the peak of the left and right halves of the histogram
 		# These will be the starting point for the left and right lines
 		midpoint = np.int(histogram.shape[0]/2)
@@ -221,9 +193,9 @@ def process_image(img, save_ouput_file=False, is_first_frame=True):
 			win_xright_low = rightx_current - margin
 			win_xright_high = rightx_current + margin
 			# Draw the windows on the visualization image
-			cv2.rectangle(out_img,(win_xleft_low,win_y_low),(win_xleft_high,win_y_high),
+			cv2.rectangle(windowed_img,(win_xleft_low,win_y_low),(win_xleft_high,win_y_high),
 			(0,255,0), 2) 
-			cv2.rectangle(out_img,(win_xright_low,win_y_low),(win_xright_high,win_y_high),
+			cv2.rectangle(windowed_img,(win_xright_low,win_y_low),(win_xright_high,win_y_high),
 			(0,255,0), 2) 
 			# Identify the nonzero pixels in x and y within the window
 			good_left_inds = ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) & 
@@ -257,6 +229,14 @@ def process_image(img, save_ouput_file=False, is_first_frame=True):
 		ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
 		left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
 		right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+		windowed_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+		windowed_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+
+		# save the windowed
+		if save_ouput_file==True:
+			write_name = output_images_path + 'windowed' + str(idx) + '.jpg'
+			cv2.imwrite(write_name, windowed_img) 
 
 	else:
 		# Assume you now have a new warped binary image 
@@ -321,135 +301,6 @@ def process_image(img, save_ouput_file=False, is_first_frame=True):
 	cv2.putText(result, 'Radius of Curvature: ' + str(round(curve_rad, 3)) + '(m)', (50, 50), cv2.FONT_ITALIC, 1, (255, 255, 255), 2)
 	cv2.putText(result, 'Vehicle position of center: ' + str(round(center_diff, 3)) + '(m)', (50, 100), cv2.FONT_ITALIC, 1, (255, 255, 255), 2)
 
-
-
-
-	# tracking
-	# window_width = 25
-	# window_height = 80
-	# tracker = Tracker(window_width=window_width, window_height=window_height, margin=25, ym=10/720, xm=4/384, smooth_factor=15)
-	# window_centroids = tracker.find_window_centroids(warped)
-
-	# # points used to calc left and right windows
-	# l_points = np.zeros_like(warped)
-	# r_points = np.zeros_like(warped)
-
-	# left_x = []
-	# right_x = []
-
-	# # go through each level and calc windows
-	# for level in range(0, len(window_centroids)):
-	# 	# add center value found in frame to the list of lane points per left, right
-	# 	left_x.append(window_centroids[level][0])
-	# 	right_x.append(window_centroids[level][1])
-
-	# 	# window_mask is a function to draw window areas
-	# 	l_mask = window_mask(window_width, window_height, warped, window_centroids[level][0], level)
-	# 	r_mask = window_mask(window_width, window_height, warped, window_centroids[level][1], level)
-
-	# 	# add graphic points from window mask to total pixels
-	# 	l_points[(l_points == 255) | (l_mask == 1)] = 255
-	# 	r_points[(r_points == 255) | (r_mask == 1)] = 255
-
-	
-	# # draw windows
-	# template = np.array(r_points + l_points, np.uint8) # add lft and right window pixels together
-	# zero_channel = np.zeros_like(template) # zero color channel
-	# template = np.array(cv2.merge((zero_channel, template, zero_channel)), np.uint8) # green the window pixels
-	# war_page = np.array(cv2.merge((warped, warped, warped)), np.uint8) # the original road pixels in 3 channels
-	# windowed = cv2.addWeighted(war_page, 1, template, 0.5, 0.0) # overlay the original road image with the window results
-
-	# # save the windowed
-	# if save_ouput_file==True:
-	# 	write_name = output_images_path + 'windowed' + str(idx) + '.jpg'
-	# 	cv2.imwrite(write_name, windowed) 
-
-
-
-
-	# # lane curves
-	# # fit the lane boundaries to the left, right and center positions found
-	# y_vals = range(0, warped.shape[0]) # used fo conitnous space in resolution with one pixel
-	# res_y_vals = np.arange(warped.shape[0] - (window_height/2), 0, -window_height) # fitting to box centers
-
-	# left_fit = np.polyfit(res_y_vals, left_x, 2) # fitting to box centers
-	# left_fitx = left_fit[0]*y_vals*y_vals + left_fit[1]*y_vals + left_fit[2] # find coefficients of that curve
-	# left_fitx = np.array(left_fitx, np.int32)
-
-	# right_fit = np.polyfit(res_y_vals, right_x, 2) # fitting to box centers
-	# right_fitx = right_fit[0]*y_vals*y_vals + right_fit[1]*y_vals + right_fit[2] # find coefficients of that curve
-	# right_fitx = np.array(right_fitx, np.int32)
-
-	# # create arrays for lines
-	# left_lane = np.array(list(zip(np.concatenate((left_fitx - window_width/2, left_fitx[::-1] + window_width/2), axis=0), np.concatenate((y_vals, y_vals[::-1]), axis=0))), np.int32)
-	# right_lane = np.array(list(zip(np.concatenate((right_fitx - window_width/2, right_fitx[::-1] + window_width/2), axis=0), np.concatenate((y_vals, y_vals[::-1]), axis=0))), np.int32)
-	# inner_lane = np.array(list(zip(np.concatenate((left_fitx - window_width/2, right_fitx[::-1] + window_width/2), axis=0), np.concatenate((y_vals, y_vals[::-1]), axis=0))), np.int32)
-
-	# n = 10
-
-	# # add the last 10 lanes
-	# left_queue = collections.deque(maxlen=n)
-	# left_queue.append(left_lane)
-
-	# right_queue = collections.deque(maxlen=n)
-	# right_queue.append(right_lane)
-
-	# inner_queue = collections.deque(maxlen=n)
-	# inner_queue.append(inner_lane)
-
-	# # calculate average
-	# if len(left_queue) == n:
-	# 	left_avg = sum(left_queue) / n
-	# else:
-	# 	left_avg = left_lane
-
-	# if len(left_queue) == n:
-	# 	right_avg = sum(right_queue) / n
-	# else:
-	# 	right_avg = right_lane
-
-	# if len(left_queue) == n:
-	# 	inner_avg = sum(inner_queue) / n
-	# else:
-	# 	inner_avg = inner_lane
-
-
-
-	# road = np.zeros_like(img)
-	# cv2.fillPoly(road, [left_avg], color=[255, 0, 0])
-	# cv2.fillPoly(road, [right_avg], color=[0, 0, 255])
-	# cv2.fillPoly(road, [inner_avg], color=[0, 255, 0])
-	
-	# # save the road
-	# if save_ouput_file==True:
-	# 	write_name = output_images_path + 'road' + str(idx) + '.jpg'
-	# 	cv2.imwrite(write_name, road) 
-	
-
-	# road_warped = cv2.warpPerspective(road, Minv, img_size, flags=cv2.INTER_LINEAR)
-	# result = cv2.addWeighted(img, 1.0, road_warped, 1.0, 0.0)
-
-
-
-
-
-	# # calculate curvature and offset
-	# ym_per_pix = tracker.ym_per_pix
-	# xm_per_pix = tracker.xm_per_pix
-
-	# # radius of curvature
-	# curve_fit_cr = np.polyfit(np.array(res_y_vals, np.float32) * ym_per_pix, np.array(left_x, np.float32) * xm_per_pix, 2)
-	# curve_rad = ((1 + (2 * curve_fit_cr[0] * y_vals[-1] * ym_per_pix + curve_fit_cr[1])**2)**1.5) / np.absolute(2 * curve_fit_cr[0])
-
-	# # offset of center
-	# camera_center = (left_fitx[-1] + right_fitx[-1]) / 2. # -1 to have the closest to the car
-	# center_diff = (camera_center - warped.shape[1] / 2) * xm_per_pix
-	
-	# # draw the text showing curvature, offset of center
-	# cv2.putText(result, 'Radius of Curvature = ' + str(round(curve_rad, 3)) + '(m)', (50, 50), cv2.FONT_ITALIC, 1, (255, 255, 255), 2)
-	# cv2.putText(result, 'Vehicle is ' + str(round(center_diff, 3)) + 'm ' + ' of center', (50, 100), cv2.FONT_ITALIC, 1, (255, 255, 255), 2)
-
-
 	return result
 
 
@@ -471,9 +322,9 @@ for idx, fname in enumerate(images_list):
 
 
 # process video
-input_video = 'project_video.mp4'
-output_video = 'output_video.mp4'
+# input_video = 'project_video.mp4'
+# output_video = 'output_video.mp4'
 
-clip = VideoFileClip(input_video)
-video_clip = clip.fl_image(process_image)
-video_clip.write_videofile(output_video, audio=False)
+# clip = VideoFileClip(input_video)
+# video_clip = clip.fl_image(process_image)
+# video_clip.write_videofile(output_video, audio=False)
