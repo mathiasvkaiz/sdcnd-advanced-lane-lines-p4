@@ -10,6 +10,19 @@ dist_pickle = pickle.load(open('camera_cal/calibration_pickle.p', 'rb'))
 mtx = dist_pickle['mtx']
 dist = dist_pickle['dist']
 
+# mask values
+top_left = [580, 450]
+top_right = [720, 450]
+bottom_left = [190, 720]
+bottom_right = [1190, 720]
+
+proj_top_left = [320, 0]
+proj_top_right = [1000, 0]
+proj_bottom_left = [320, 720]
+proj_bottom_right = [1000, 720]
+
+output_images_path = './output_images/'
+
 # The lessons binary creating was a good starting point, but using color thresholding as well 
 # we have a lot more possibilities to get better results
 def abs_sobel_thresh(img, orient='x', sobel_kernel=3, thresh=(0, 255)):
@@ -78,10 +91,48 @@ def window_mask(width, height, img, center, level):
 	return output
 
 
-def process_image(img):
+def region_of_interest(img, vertices=None):
+    '''
+    Applies an image mask.
+    
+    Only keeps the region of the image defined by the polygon
+    formed from `vertices`. The rest of the image is set to black.
+    '''
+    
+    if vertices == None:
+        vertices = np.array([[bottom_left, (top_left[0], top_left[1]), (top_right[0], top_right[1]), bottom_right]], dtype=np.int32)
+
+    #defining a blank mask to start with
+    mask = np.zeros_like(img)   
+    
+    #defining a 3 channel or 1 channel color to fill the mask with depending on the input image
+    if len(img.shape) > 2:
+        channel_count = img.shape[2]  # i.e. 3 or 4 depending on your image
+        ignore_mask_color = (255,) * channel_count
+    else:
+        ignore_mask_color = 255
+        
+    #filling pixels inside the polygon defined by "vertices" with the fill color    
+    cv2.fillPoly(mask, vertices, ignore_mask_color)
+    
+    #returning the image only where mask pixels are nonzero
+    masked_image = cv2.bitwise_and(img, mask)
+    return masked_image
+
+
+def process_image(img, save_ouput_file=False):
 	
 	# undistort the image
 	img = cv2.undistort(img, mtx, dist, None, mtx)
+	img_size = (img.shape[1], img.shape[0])
+	
+	# save the undistorted
+	if save_ouput_file==True:
+		write_name = output_images_path + 'undistorted' + str(idx) + '.jpg'
+		cv2.imwrite(write_name, img) 
+
+
+
 
 	# process image and generate binaries
 	grad_x = abs_sobel_thresh(img, orient='x', thresh=(12, 255)) # like canny transform
@@ -91,38 +142,40 @@ def process_image(img):
 	preprocessed = np.zeros_like(img[:, :, 0])
 	preprocessed[(grad_x == 1) & (grad_y == 1) | (c_binary == 1)] = 255
 
+	# save the preprocessed
+	if save_ouput_file==True:
+		write_name = output_images_path + 'preprocessed' + str(idx) + '.jpg'
+		cv2.imwrite(write_name, preprocessed) 
+
+
+
+
+	# apply region of interest
+	masekd = region_of_interest(preprocessed)
+
+	# save the masked
+	if save_ouput_file==True:
+		write_name = output_images_path + 'masked' + str(idx) + '.jpg'
+		cv2.imwrite(write_name, masekd) 
+
+
 	# warp image
-	img_size = (img.shape[1], img.shape[0])
-	# mask values
-	top_left = [580, 450]
-	top_right = [720, 450]
-	bottom_left = [190, 720]
-	bottom_right = [1190, 720]
-
-	proj_top_left = [320, 0]
-	proj_top_right = [1000, 0]
-	proj_bottom_left = [320, 720]
-	proj_bottom_right = [1000, 720]
-	
-	# bottom_width = 0.76 # bottom width percentage
-	# middle_width = 0.08 # middle height percentage
-	# height_percentage = 0.62 # height percentage
-	# bottom_trim = 0.935 # from top to bottom percentage
-	# offset = img_size[0] * 0.25
-	# dst = np.float32([[offset, 0], [img_size[0] - offset, 0], [img_size[0] - offset, img_size[1]], [offset, img_size[1]]])
-
 	src = np.float32([bottom_left, top_left, top_right, bottom_right])
 	dst = np.float32([proj_bottom_left, proj_top_left, proj_top_right, proj_bottom_right])
-
-	# w, h = 1280, 720
-	# x, y = 0.5*w, 0.8*h
-	# src = np.float32([[200./1280*w,720./720*h], [453./1280*w,547./720*h], [835./1280*w,547./720*h], [1100./1280*w,720./720*h]])
-	# dst = np.float32([[(w-x)/2.,h], [(w-x)/2.,0.82*h], [(w+x)/2.,0.82*h], [(w+x)/2.,h]])
 
 	# perform perspective transform
 	M = cv2.getPerspectiveTransform(src, dst)
 	Minv = cv2.getPerspectiveTransform(dst, src)
-	warped = cv2.warpPerspective(preprocessed, M, img_size, flags=cv2.INTER_LINEAR)
+	warped = cv2.warpPerspective(masekd, M, img_size, flags=cv2.INTER_LINEAR)
+
+	# save the warped
+	if save_ouput_file==True:
+		write_name = output_images_path + 'warped' + str(idx) + '.jpg'
+		cv2.imwrite(write_name, warped) 
+
+
+
+
 
 	# tracking
 	window_width = 25
@@ -130,16 +183,12 @@ def process_image(img):
 	tracker = Tracker(window_width=window_width, window_height=window_height, margin=25, ym=10/720, xm=4/384, smooth_factor=15)
 	window_centroids = tracker.find_window_centroids(warped)
 
-
-
-	# windows
-	# points used to draw left and right windows
+	# points used to calc left and right windows
 	l_points = np.zeros_like(warped)
 	r_points = np.zeros_like(warped)
 
 	left_x = []
 	right_x = []
-
 
 	# go through each level and calc windows
 	for level in range(0, len(window_centroids)):
@@ -151,18 +200,22 @@ def process_image(img):
 		l_mask = window_mask(window_width, window_height, warped, window_centroids[level][0], level)
 		r_mask = window_mask(window_width, window_height, warped, window_centroids[level][1], level)
 
-		# add graphic points from windo mask to total pixels
+		# add graphic points from window mask to total pixels
 		l_points[(l_points == 255) | (l_mask == 1)] = 255
 		r_points[(r_points == 255) | (r_mask == 1)] = 255
 
 	
-	# # draw windows
-	# template = np.array(r_points + l_points, np.uint8) # add lft and right window pixels together
-	# zero_channel = np.zeros_like(template) # zero color channel
-	# template = np.array(cv2.merge((zero_channel, template, zero_channel)), np.uint8) # green the window pixels
-	# warpage = np.array(cv2.merge((warped, warped, warped)), np.uint8) # the original road pixels in 3 channels
-	# result = cv2.addWeighted(warpage, 1, template, 0.5, 0.0) # overlay the original road image with the window results
+	# draw windows
+	template = np.array(r_points + l_points, np.uint8) # add lft and right window pixels together
+	zero_channel = np.zeros_like(template) # zero color channel
+	template = np.array(cv2.merge((zero_channel, template, zero_channel)), np.uint8) # green the window pixels
+	war_page = np.array(cv2.merge((warped, warped, warped)), np.uint8) # the original road pixels in 3 channels
+	windowed = cv2.addWeighted(war_page, 1, template, 0.5, 0.0) # overlay the original road image with the window results
 
+	# save the windowed
+	if save_ouput_file==True:
+		write_name = output_images_path + 'windowed' + str(idx) + '.jpg'
+		cv2.imwrite(write_name, windowed) 
 
 
 
@@ -186,24 +239,24 @@ def process_image(img):
 	inner_lane = np.array(list(zip(np.concatenate((left_fitx - window_width/2, right_fitx[::-1] + window_width/2), axis=0), np.concatenate((y_vals, y_vals[::-1]), axis=0))), np.int32)
 
 	road = np.zeros_like(img)
-	# road_bg = np.zeros_like(img)
 	cv2.fillPoly(road, [left_lane], color=[255, 0, 0])
 	cv2.fillPoly(road, [right_lane], color=[0, 0, 255])
 	cv2.fillPoly(road, [inner_lane], color=[0, 255, 0])
-	# cv2.fillPoly(road_bg, [left_lane], color=[255, 255, 255])
-	# cv2.fillPoly(road_bg, [right_lane], color=[255, 255, 255])
+	
+	# save the road
+	if save_ouput_file==True:
+		write_name = output_images_path + 'road' + str(idx) + '.jpg'
+		cv2.imwrite(write_name, road) 
+	
 
 	road_warped = cv2.warpPerspective(road, Minv, img_size, flags=cv2.INTER_LINEAR)
-	# road_warped_bg = cv2.warpPerspective(road_bg, Minv, img_size, flags=cv2.INTER_LINEAR)
-
-	# base = cv2.addWeighted(img, 1.0, road_warped_bg, -1.0, 0.0)
 	result = cv2.addWeighted(img, 1.0, road_warped, 1.0, 0.0)
 
 
 
 
 
-	# calculate offset
+	# calculate curvature and offset
 	ym_per_pix = tracker.ym_per_pix
 	xm_per_pix = tracker.xm_per_pix
 
@@ -211,15 +264,15 @@ def process_image(img):
 	curve_fit_cr = np.polyfit(np.array(res_y_vals, np.float32) * ym_per_pix, np.array(left_x, np.float32) * xm_per_pix, 2)
 	curve_rad = ((1 + (2 * curve_fit_cr[0] * y_vals[-1] * ym_per_pix + curve_fit_cr[1])**2)**1.5) / np.absolute(2 * curve_fit_cr[0])
 
+	# offset of center
 	camera_center = (left_fitx[-1] + right_fitx[-1]) / 2. # -1 to have the closest to the car
 	center_diff = (camera_center - warped.shape[1] / 2) * xm_per_pix
-	side_pos = 'left'
-	if center_diff <= 0:
-		side_pos = 'right'
-
-	# draw the text shwoing curvature, offset
+	
+	# draw the text showing curvature, offset of center
 	cv2.putText(result, 'Radius of Curvature = ' + str(round(curve_rad, 3)) + '(m)', (50, 50), cv2.FONT_ITALIC, 1, (255, 255, 255), 2)
-	cv2.putText(result, 'Vehicle is ' + str(abs(round(center_diff, 3))) + 'm ' + side_pos + ' of center', (50, 100), cv2.FONT_ITALIC, 1, (255, 255, 255), 2)
+	cv2.putText(result, 'Vehicle is ' + str(round(center_diff, 3)) + 'm ' + ' of center', (50, 100), cv2.FONT_ITALIC, 1, (255, 255, 255), 2)
+
+
 
 
 	return result
@@ -233,17 +286,19 @@ for idx, fname in enumerate(images_list):
 	# read the image
 	img = cv2.imread(fname)
 
-	result = process_image(img)
+	result = process_image(img, True)
 
 	# save the result
-	write_name = './test_images/tracked' + str(idx) + '.jpg'
+	write_name = output_images_path + 'result' + str(idx) + '.jpg'
 	cv2.imwrite(write_name, result) 
 
 
-# process video
-# input_video = 'project_video.mp4'
-# output_video = 'output_video.mp4'
 
-# clip = VideoFileClip(input_video)
-# video_clip = clip.fl_image(process_image)
-# video_clip.write_videofile(output_video, audio=False)
+
+# process video
+input_video = 'project_video.mp4'
+output_video = 'output_video.mp4'
+
+clip = VideoFileClip(input_video)
+video_clip = clip.fl_image(process_image)
+video_clip.write_videofile(output_video, audio=False)
