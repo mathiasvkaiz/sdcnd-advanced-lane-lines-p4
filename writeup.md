@@ -19,11 +19,11 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image1]: ./output_images/corners_found0.jpg "Camrea Calibration"
+[image1]: ./output_images/corners_found1.jpg "Camera Calibration"
 [image2]: ./output_images/undistorted0.jpg "Undistorted"
 [image3]: ./output_images/preprocessed0.jpg "Binary"
 [image4]: ./output_images/masked0.jpg "Region of Interest"
-[image5]: ./output_images/warped.jpg "Warped"
+[image5]: ./output_images/warped0.jpg "Warped"
 [image6]: ./output_images/windowed0.jpg "Windows"
 [image7]: ./examples/curvature.png "Curvature Formula"
 [image8]: ./output_images/result0.jpg "Final Result"
@@ -130,6 +130,7 @@ conv_x = 3.7/700 # meters per pixel in x dimension
 The curvature is calulated based on the found pixels for left and right lane with respect to the given y pixels / height for each x pixel.
 
 The following formula is used applying also the conversion factors for pixel to meters.
+
 ![alt text][image7]
 
 
